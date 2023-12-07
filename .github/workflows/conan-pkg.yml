@@ -1,0 +1,59 @@
+on:
+  push:
+    branches:
+      - main
+
+name: conan
+
+jobs:
+  run-conan:
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        config:
+          - name: Ubuntu Debug
+            os: ubuntu-latest
+            conan-profile: ubuntu-debug
+            pkg-version: 18.17.1
+          - name: Ubuntu Release
+            os: ubuntu-latest
+            conan-profile: ubuntu-release
+            pkg-version: 18.17.1
+
+          # - name: Windows 2019 Debug
+          #   os: windows-2019
+          #   conan-profile: vs-2019-debug
+          #   pkg-version: 18.17.1
+          # - name: Windows 2019 Release
+          #   os: windows-2019
+          #   conan-profile: vs-2019-release
+          #   pkg-version: 18.17.1
+
+    name: ${{ matrix.config.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Conan
+        run: |
+          pip install conan
+          conan profile detect --force
+
+      - name: Setup conan on ubuntu
+        if: startsWith(matrix.config.os, 'ubuntu')
+        run: |
+          echo "tools.system.package_manager:mode = install" > ~/.conan2/global.conf
+          echo "tools.system.package_manager:sudo = True" >> ~/.conan2/global.conf
+
+      - name: Enable Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1.12.1
+
+      - name: Run
+        env:
+          CONAN_LOGIN_USERNAME: overte
+          CONAN_PASSWORD: ${{ secrets.CONAN_PASSWORD }}
+        run: |
+          python --version
+          conan remote add overte https://git.anotherfoxguy.com/api/packages/overte/conan
+          conan create . -pr="./.conan-profiles/${{ matrix.config.conan-profile }}" -b=missing --version ${{ matrix.config.pkg-version }} --user overte --channel stable
+          conan upload libnode/${{ matrix.config.pkg-version }}@overte/stable -r overte -c

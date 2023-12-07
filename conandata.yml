@@ -1,0 +1,4 @@
+sources:
+  "80":
+    url: "https://chromium.googlesource.com/external/webrtc/+archive/e99f6879f6ae1c8c53f9ce7024abb33ce3173795.tar.gz"
+    sha256: "1157525a819c395020795ff8c49eee7472b8666cc256b45558b9cbe2e0864c35"
