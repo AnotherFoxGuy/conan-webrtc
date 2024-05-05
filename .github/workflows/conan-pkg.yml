@@ -12,23 +12,21 @@ jobs:
       fail-fast: true
       matrix:
         config:
-          - name: Ubuntu Debug
-            os: ubuntu-latest
-            conan-profile: ubuntu-debug
-            pkg-version: 18.17.1
+          # - name: Ubuntu Debug
+          #   os: ubuntu-latest
+          #   conan-profile: ubuntu-debug
+          #   pkg-version: 18.17.1
           - name: Ubuntu Release
             os: ubuntu-latest
             conan-profile: ubuntu-release
-            pkg-version: 18.17.1
 
           # - name: Windows 2019 Debug
           #   os: windows-2019
           #   conan-profile: vs-2019-debug
           #   pkg-version: 18.17.1
-          # - name: Windows 2019 Release
-          #   os: windows-2019
-          #   conan-profile: vs-2019-release
-          #   pkg-version: 18.17.1
+          - name: Windows 2019 Release
+            os: windows-2019
+            conan-profile: vs-2019-release
 
     name: ${{ matrix.config.name }}
     steps:
@@ -55,5 +53,5 @@ jobs:
         run: |
           python --version
           conan remote add overte https://git.anotherfoxguy.com/api/packages/overte/conan
-          conan create . -pr="./.conan-profiles/${{ matrix.config.conan-profile }}" -b=missing --version ${{ matrix.config.pkg-version }} --user overte --channel stable
-          conan upload libnode/${{ matrix.config.pkg-version }}@overte/stable -r overte -c
+          conan create . -pr="./.conan-profiles/${{ matrix.config.conan-profile }}" -b=missing --user overte --channel stable
+          # conan upload google-webrtc/94@overte/stable -r overte -c
