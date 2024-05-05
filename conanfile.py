@@ -1,6 +1,7 @@
 import os
 from conan import ConanFile
-from conan.tools.files import replace_in_file, chdir
+from conan.tools.files import replace_in_file, chdir, copy
+from conan.tools.layout import basic_layout
 
 
 class WebrtcConan(ConanFile):
@@ -17,13 +18,16 @@ class WebrtcConan(ConanFile):
     topics = ("webrtc", "google")
     settings = "os", "compiler", "build_type", "arch"
     options = {"shared": [False], "use_h264": [True, False]}
+    source_buildenv = True
     default_options = {"shared": False, "use_h264": True}
     default_user = "overte"
     default_channel = "stable"
-    _webrtc_source = ""
+
+    def layout(self):
+        basic_layout(self, "src")
 
     def build_requirements(self):
-        self.tool_requires("depot_tools/cci.20201009@overte/stable")
+        self.tool_requires("depot_tools/cci.20201009")
 
     def configure(self):
         compiler = self.settings.compiler
@@ -33,18 +37,16 @@ class WebrtcConan(ConanFile):
             del self.settings.compiler
 
     def source(self):
-        self.setup_vars()
         self.run("gclient")
-        if self.settings.os == "iOS":
-            self.run("fetch --nohooks webrtc_ios")
-        else:
-            self.run("fetch --nohooks webrtc")
-        with chdir("src"):
+        self.run("fetch --nohooks webrtc")
+        with chdir(self, "src"):
             self.run(
                 "git checkout -b %s branch-heads/%s" % (self.version, self._branchHead)
             )
             self.run("gclient sync -D")
-        self._patch_runtime()
+
+    def _src_dir(self):
+        return os.path.join(self.source_folder, "src")
 
     def _is_debug(self):
         build_type = self.settings.get_safe("build_type", default="Release")
@@ -55,48 +57,50 @@ class WebrtcConan(ConanFile):
         return build_type == "RelWithDebInfo"
 
     def build(self):
-        self.setup_vars()
-        args = ""
+        self._patch_runtime()
+        args = []
         # no bundled libc++
         # if self.settings.os != "iOS":
-        # args += "use_custom_libcxx=false use_custom_libcxx_for_host=false "
-        # args += "use_custom_libcxx_for_host=false "
+        # args.append("use_custom_libcxx=false use_custom_libcxx_for_host=false ")
+        # args.append("use_custom_libcxx_for_host=false ")
         # needed on linux 64bit, else there will be compile errors,
         # like `std::__1::__next_prime`
-        args += "use_custom_libcxx=false "
+        args.append("use_custom_libcxx=false")
         if self.settings.arch == "armv8" or self.settings.arch == "armv7":
             # set host cxx, else you might get the error `version `GLIBCXX_3.4.26' not found` when running `protoc`
-            args += "use_custom_libcxx_for_host=true "
-        args += "treat_warnings_as_errors=false "
+            args.append("use_custom_libcxx_for_host=true")
+        args.append("treat_warnings_as_errors=false")
         # does not work well! check https://groups.google.com/g/discuss-webrtc/c/muT4irg2dvI/m/X84U9K7STi8J for patch
-        # args += "rtc_build_ssl=false "
-        # args += 'rtc_ssl_root=\\"/usr\\" '
+        # args.append("rtc_build_ssl=false "
+        # args.append('rtc_ssl_root=\\"/usr\\" '
         if self._is_debug():
-            args += "is_debug=true "
+            args.append("is_debug=true")
         else:
-            args += "is_debug=false "
+            args.append("is_debug=false")
         # no tests, else the windows debug version will not compile
-        args += "rtc_include_tests=false libyuv_include_tests=false "
+        args.append("rtc_include_tests=false libyuv_include_tests=false")
         # no tools
-        args += "rtc_build_tools=false "
+        args.append("rtc_build_tools=false")
         if self.options.use_h264:
-            args += 'rtc_use_h264=true proprietary_codecs=true ffmpeg_branding=\\"Chrome\\" '
+            args.append(
+                'rtc_use_h264=true proprietary_codecs=true ffmpeg_branding=\\"Chrome\\"'
+            )
         if self.settings.os == "Windows":
-            args += self._create_windows_arguments()
+            args + self._create_windows_arguments()
         if self.settings.os == "Linux":
-            args += self._create_linux_arguments()
+            args + self._create_linux_arguments()
         if self.settings.os == "Macos":
-            args += self._create_macos_arguments()
+            args + self._create_macos_arguments()
         if self.settings.os == "iOS":
-            args += self._create_ios_arguments()
-        call = 'gn gen "%s" --args="%s"' % (self.build_folder, args)
-        self.output.info("call:%s" % (call))
+            args + self._create_ios_arguments()
+        call = 'gn gen "%s" --args="%s"' % (self.build_folder, " ".join(args))
+        self.output.info("call: %s" % (call))
 
-        with chdir(self._webrtc_source):
+        with chdir(self, self._src_dir()):
             self.run(call)
             # show configuration
-            self.run('gn args --list "%s"' % (self.build_folder))
-        with chdir(self.build_folder):
+            # self.run('gn args --list "%s"' % (self.build_folder))
+        with chdir(self, self.build_folder):
             self.run("ninja")
 
     def _patch_runtime(self):
@@ -105,9 +109,10 @@ class WebrtcConan(ConanFile):
         # https://docs.conan.io/en/latest/reference/tools.html#tools-replace-in-file
         # TODO check the actually set runtime
         if self.settings.os == "Windows":
-            with chdir(self._webrtc_source):
+            with chdir(self, self._src_dir()):
                 build_gn_file = os.path.join("build", "config", "win", "BUILD.gn")
                 replace_in_file(
+                    self,
                     build_gn_file,
                     'configs = [ ":static_crt" ]',
                     'configs = [ ":dynamic_crt" ]',
@@ -117,17 +122,19 @@ class WebrtcConan(ConanFile):
                 # https://stackoverflow.com/questions/62218555/webrtc-stddeque-iterator-exception-when-rtc-dcheck-is-on
                 # there's a bug with iterator debug
                 replace_in_file(
+                    self,
                     thread_file,
                     "#if RTC_DCHECK_IS_ON",
                     "#if 0 // patched in conanfile, RTC_DCHECK_IS_ON",
                 )
         if self.settings.os == "Linux":
-            with chdir(self._webrtc_source):
+            with chdir(self, self._src_dir()):
                 clockdrift_detector_file = os.path.join(
                     "modules", "audio_processing", "aec3", "clockdrift_detector.h"
                 )
                 # missing `std::` wont compile with gcc10
                 replace_in_file(
+                    self,
                     clockdrift_detector_file,
                     " size_t stability_counter_;",
                     " std::size_t stability_counter_;",
@@ -137,34 +144,32 @@ class WebrtcConan(ConanFile):
 
         # there is a `include <cstring>` missing when not compiling with
         # their stdcxx (`use_custom_libcxx`)
-        with chdir(self._webrtc_source):
+        with chdir(self, self._src_dir()):
             stack_copier_signal_file = os.path.join(
                 "base", "profiler", "stack_copier_signal.cc"
             )
             replace_in_file(
+                self,
                 stack_copier_signal_file,
                 "#include <syscall.h>",
                 """#include <syscall.h>
                    #include <cstring>""",
             )
 
-    def setup_vars(self):
-        self._webrtc_source = os.path.join(self.source_folder, "src")
-
     def _create_windows_arguments(self):
         # remove visual_studio_version? according to documentation this value is always 2015
-        args = "is_clang=false visual_studio_version=2019 "
+        args = ["is_clang=false visual_studio_version=2019"]
         # args = ""
         if self._is_debug():
             # if not set the compilation will fail with:
             # _iterator_debug_level value '0' doesn't match value '2'
             # does not compile if tests and tools gets compiled in!
-            args += "enable_iterator_debugging=true "
+            args.append("enable_iterator_debugging=true")
             # pass
         return args
 
     def _create_linux_arguments(self):
-        with chdir(self._webrtc_source):
+        with chdir(self, self._src_dir()):
             self.run("./build/linux/sysroot_scripts/install-sysroot.py --arch=amd64")
             if self.settings.arch == "armv8":
                 self.run(
@@ -172,47 +177,85 @@ class WebrtcConan(ConanFile):
                 )
             if self.settings.arch == "armv7":
                 self.run("./build/linux/sysroot_scripts/install-sysroot.py --arch=arm")
-        args = ""
-        args += "use_rtti=true "
+        args = ["use_rtti=true"]
         if self.settings.arch != "armv8" and self.settings.arch != "armv7":
-            args += "use_sysroot=false "
+            args.append("use_sysroot=false")
         # compiler = self.settings.compiler
         # if compiler == "gcc":
-        #     args += "is_clang=false use_gold=false use_lld=false "
+        #     args.append("is_clang=false use_gold=false use_lld=false")
         # else:
         #     self.output.error("the compiler '%s' is not tested" % (compiler))
         # if tools.which('ccache'):
-        #     args += 'cc_wrapper=\\"ccache\\" '
+        #     args.append('cc_wrapper=\\"ccache\\"')
         if self.settings.arch == "armv8":
-            args += 'target_cpu=\\"arm64\\" '
+            args.append('target_cpu=\\"arm64\\"')
         if self.settings.arch == "armv7":
-            args += 'target_cpu=\\"arm\\" '
+            args.append('target_cpu=\\"arm\\"')
         if self._is_release_with_debug_information():
             # '2' results in a ~450mb static library
-            # args += 'symbol_level=2 '
-            args += "symbol_level=1 "
+            # args.append('symbol_level=2 ')
+            args.append("symbol_level=1")
         return args
 
     def _create_macos_arguments(self):
-        args = "use_rtti=true "
-        args += "use_sysroot=false "
+        args = ["use_rtti=true", "use_sysroot=false"]
         # if tools.which('ccache'):
-        #     args += 'cc_wrapper=\\"ccache\\" '
+        #     args.append('cc_wrapper=\\"ccache\\" '
         if self._is_release_with_debug_information():
             # '2' results in a ~450mb static library
-            # args += 'symbol_level=2 '
-            args += "symbol_level=1 "
+            # args.append('symbol_level=2 '
+            args.append("symbol_level=1")
         return args
 
     def package(self):
-        self.copy("*.h", dst="include", src="src")
-        self.copy("*.inc", dst="include", src="src")
+        copy(
+            self,
+            "*.h",
+            os.path.join(self.source_folder, "src"),
+            os.path.join(self.package_folder, "include"),
+        )
+        copy(
+            self,
+            "*.inc",
+            os.path.join(self.source_folder, "src"),
+            os.path.join(self.package_folder, "include"),
+        )
 
-        self.copy("*webrtc.lib", dst="lib", keep_path=False)
-        self.copy("*webrtc.dll", dst="bin", keep_path=False)
-        self.copy("*libwebrtc.so", dst="lib", keep_path=False)
-        self.copy("*libwebrtc.dylib", dst="lib", keep_path=False)
-        self.copy("*libwebrtc.a", dst="lib", keep_path=False)
+        copy(
+            self,
+            "*webrtc.lib",
+            self.build_folder,
+            os.path.join(self.package_folder, "lib"),
+            keep_path=False,
+        )
+        copy(
+            self,
+            "*webrtc.dll",
+            self.build_folder,
+            os.path.join(self.package_folder, "bin"),
+            keep_path=False,
+        )
+        copy(
+            self,
+            "*libwebrtc.so",
+            self.build_folder,
+            os.path.join(self.package_folder, "lib"),
+            keep_path=False,
+        )
+        copy(
+            self,
+            "*libwebrtc.dylib",
+            self.build_folder,
+            os.path.join(self.package_folder, "lib"),
+            keep_path=False,
+        )
+        copy(
+            self,
+            "*libwebrtc.a",
+            self.build_folder,
+            os.path.join(self.package_folder, "lib"),
+            keep_path=False,
+        )
 
     def package_info(self):
         self.cpp_info.libs = ["webrtc"]
