@@ -27,7 +27,7 @@ class WebrtcConan(ConanFile):
         basic_layout(self, "src")
 
     def build_requirements(self):
-        self.tool_requires("depot_tools/cci.20201009")
+        self.tool_requires("depot_tools/20240712@overte/stable")
 
     def configure(self):
         compiler = self.settings.compiler

@@ -1,0 +1,6 @@
+sources:
+  "20240712":
+    url: "https://chromium.googlesource.com/chromium/tools/depot_tools.git/+archive/791894e4c44fae379faae9b4ca8388577f212a03.tar.gz"
+patches:
+  "202407122":
+    - patch_file: "patches/001-use-system-python.patch"
