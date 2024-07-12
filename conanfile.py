@@ -9,8 +9,8 @@ class WebrtcConan(ConanFile):
     # versions https://chromiumdash.appspot.com/releases?platform=Linux
     # the version 83.0.4103.61 means v83, branch head 4103 (daily branches)
     # https://groups.google.com/forum/#!msg/discuss-webrtc/Ozvbd0p7Q1Y/M4WN2cRKCwAJ
-    version = "94"
-    _branchHead = "4606"
+    version = "124"
+    _branchHead = "6367"
     license = "MIT"
     author = "Markus Lanner <contact@markus-lanner.com>"
     url = "github.com/freckled-dev/conan-google-webrtc"
